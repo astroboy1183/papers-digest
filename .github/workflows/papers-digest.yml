@@ -41,3 +41,4 @@ jobs:
             -d chat_id="$TELEGRAM_CHAT_ID" \
             --data-urlencode text="⚠️ $GITHUB_WORKFLOW: run failed — $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             >/dev/null
+
