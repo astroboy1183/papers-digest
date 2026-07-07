@@ -1,0 +1,4 @@
+anthropic~=0.116
+requests~=2.34
+python-dotenv~=1.2
+feedparser~=6.0
