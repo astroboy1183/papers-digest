@@ -51,6 +51,13 @@ each shows, why it matters, and the link.
   next week's 7-day lookback. A failed run pings via the workflow's
   failure-alert step.
 
+- **Two-stage review**: a cheap model (`PAPERS_MODEL_FILTER`, default
+  haiku) skims every candidate in chunks — title + 200-char snippet —
+  and shortlists recall-biased (an unparseable reply keeps the whole
+  chunk); a stronger model (`PAPERS_MODEL_RANK`, default sonnet) ranks
+  the survivors on their full abstracts. One model can't judge ~600
+  abstracts in one call; two tiers can, for pennies.
+
 ## Ops
 
 - Schedule: `.github/workflows/papers-digest.yml` (`37 3 * * 6` UTC = Sat 09:07 IST)
