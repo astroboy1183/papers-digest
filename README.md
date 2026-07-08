@@ -47,9 +47,9 @@ each shows, why it matters, and the link.
 - Weekly on purpose: daily arXiv is noise; a few hundred candidates in
   (down-sampled from the full ~1500-paper week), 6-8 picks out, once a
   week, is readable.
-- Like release-radar: no backup cron — a dropped Saturday is covered by
-  next week's 7-day lookback. A failed run pings via the workflow's
-  failure-alert step.
+- Scheduled by the fleet-scheduler Worker at the exact minute; the
+  GitHub cron an hour later is a guarded backup. A doubly-dropped week
+  is still covered by next Saturday's 7-day lookback.
 
 - **Two-stage review**: a cheap model (`PAPERS_MODEL_FILTER`, default
   haiku) skims every candidate in chunks — title + 200-char snippet —
@@ -62,6 +62,8 @@ each shows, why it matters, and the link.
 
 ## Ops
 
-- Schedule: `.github/workflows/papers-digest.yml` (`37 3 * * 6` UTC = Sat 09:07 IST)
+- Schedule: the fleet-scheduler Worker dispatches Sat 09:07 IST on the
+  minute; the GitHub cron (`37 4 * * 6` UTC = Sat 10:07 IST) is a
+  guarded backup
 - Run now: `gh workflow run papers-digest.yml -R astroboy1183/papers-digest`
 - Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`

@@ -2,27 +2,67 @@ name: Papers digest
 
 on:
   schedule:
-    # 03:37 UTC Saturday = 09:07 IST Saturday. Odd minute avoids cron
-    # congestion. Weekly and low-stakes, so no backup cron: a dropped week
-    # is covered by next Saturday's 7-day lookback.
-    - cron: '37 3 * * 6'
-  workflow_dispatch: {}
+    # Backup only: fleet-scheduler dispatches this workflow at the exact
+    # time (Sat 03:37 UTC = 09:07 IST); this cron fires an hour later and
+    # the guard skips it when the dispatch already delivered.
+    - cron: '37 4 * * 6'
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Set to "scheduler" by fleet-scheduler; leave empty for manual runs'
+        default: ''
+        required: false
+
+permissions:
+  contents: read
+  actions: read  # guard step lists today's runs
 
 jobs:
   digest:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Skip if an earlier run already handled today
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_SOURCE: ${{ inputs.source || '' }}
+        run: |
+          # Truly-manual runs always proceed; cron runs and scheduler
+          # dispatches (source=scheduler) dedupe against each other.
+          # Fails open — a broken check must never cost a digest.
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] && [ "$DISPATCH_SOURCE" != "scheduler" ]; then
+            exit 0
+          fi
+          today=$(date -u +%Y-%m-%d)
+          count=$(RUN_ID="$GITHUB_RUN_ID" gh api -X GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/papers-digest.yml/runs" \
+            -f created=">=$today" \
+            --jq '[.workflow_runs[]
+                   | select(.event == "schedule" or .event == "workflow_dispatch")
+                   | select(.id != (env.RUN_ID|tonumber))
+                   | select(.status == "queued" or .status == "in_progress"
+                            or .conclusion == "success")] | length') || count=0
+          case "$count" in ''|*[!0-9]*) count=0;; esac
+          if [ "$count" -gt 0 ]; then
+            echo "An earlier run already handled today — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.guard.outputs.skip != 'true'
 
       - uses: actions/setup-python@v6
+        if: steps.guard.outputs.skip != 'true'
         with:
           python-version: '3.12'
 
       - name: Install dependencies
+        if: steps.guard.outputs.skip != 'true'
         run: pip install -r requirements.txt
 
       - name: Run digest
+        if: steps.guard.outputs.skip != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
