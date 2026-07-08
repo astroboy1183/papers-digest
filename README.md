@@ -58,6 +58,8 @@ each shows, why it matters, and the link.
   the survivors on their full abstracts. One model can't judge ~600
   abstracts in one call; two tiers can, for pennies.
 
+- Tests run in CI on every push (`.github/workflows/tests.yml`).
+
 ## Ops
 
 - Schedule: `.github/workflows/papers-digest.yml` (`37 3 * * 6` UTC = Sat 09:07 IST)
