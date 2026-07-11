@@ -56,5 +56,84 @@ class ShortlistTest(unittest.TestCase):
         self.assertEqual(len(kept), 3)
 
 
+
+
+class HfSignalTest(unittest.TestCase):
+
+    def test_arxiv_id_extraction(self):
+        self.assertEqual(pd.arxiv_id("http://arxiv.org/abs/2507.01234v2"), "2507.01234")
+        self.assertEqual(pd.arxiv_id("https://arxiv.org/abs/2507.9876"), "2507.9876")
+        self.assertEqual(pd.arxiv_id(""), "")
+        self.assertEqual(pd.arxiv_id("https://example.com/paper"), "")
+
+    def test_hot_flag_threshold(self):
+        self.assertIn("🔥HF:50", pd.hot_flag({"upvotes": 50}))
+        self.assertEqual(pd.hot_flag({"upvotes": 3}), "")
+        self.assertEqual(pd.hot_flag({}), "")
+
+    def test_hot_papers_force_included_after_skim(self):
+        pool = papers(30)
+        pool[25]["upvotes"] = 99  # trending but the skim will drop it
+        saved = pd.ask_llm
+        pd.ask_llm = lambda prompt, max_tokens=0, model="": "[0, 1]"
+        try:
+            kept = pd.shortlist(pool, "m")
+        finally:
+            pd.ask_llm = saved
+        self.assertIn(pool[25], kept)
+        self.assertEqual(len(kept), 3)
+
+
+class ServedMemoryTest(unittest.TestCase):
+
+    def test_split_state_extracts_picked_ids(self):
+        text, ids = pd.split_state(
+            'digest\n===STATE===\n{"picked": ["2507.01234", "2507.9"]}')
+        self.assertEqual(text, "digest")
+        self.assertEqual(ids, ["2507.01234", "2507.9"])
+
+    def test_garbage_tail_costs_memory_not_digest(self):
+        text, ids = pd.split_state("digest\n===STATE===\nnot json")
+        self.assertEqual((text, ids), ("digest", []))
+        text, ids = pd.split_state("no tail")
+        self.assertEqual((text, ids), ("no tail", []))
+
+    def test_served_prunes_and_survives_garbage(self):
+        import tempfile
+        from pathlib import Path as P
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_dir, saved_file = pd.STATE_DIR, pd.SERVED_FILE
+            pd.STATE_DIR = P(tmp)
+            pd.SERVED_FILE = P(tmp) / "served.json"
+            try:
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                pd.save_served({"2507.1": today, "2401.9": "2024-01-01"})
+                served = pd.load_served()
+                self.assertIn("2507.1", served)
+                self.assertNotIn("2401.9", served)
+                pd.SERVED_FILE.write_text("junk")
+                self.assertEqual(pd.load_served(), {})
+            finally:
+                pd.STATE_DIR, pd.SERVED_FILE = saved_dir, saved_file
+
+
+class LinkGuardTest(unittest.TestCase):
+
+    def test_known_link_kept_invented_stripped(self):
+        known = {"http://arxiv.org/abs/2507.01234v1"}
+        out = pd.validate_links(
+            "A\nhttp://arxiv.org/abs/2507.01234v1\nB\nhttp://arxiv.org/abs/9999.11111v1",
+            known)
+        self.assertIn("2507.01234", out)
+        self.assertNotIn("9999.11111", out)
+        self.assertIn("(link unavailable)", out)
+
+    def test_trailing_punctuation_tolerated(self):
+        known = {"http://arxiv.org/abs/2507.01234v1"}
+        out = pd.validate_links("See (http://arxiv.org/abs/2507.01234v1).", known)
+        self.assertNotIn("(link unavailable)", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

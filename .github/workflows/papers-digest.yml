@@ -14,7 +14,7 @@ on:
         required: false
 
 permissions:
-  contents: read
+  contents: write  # the run commits its served-memory back
   actions: read  # guard step lists today's runs
 
 jobs:
@@ -67,7 +67,22 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PAPERS_INTERESTS: ${{ secrets.PAPERS_INTERESTS }}
         run: python papers_digest.py
+
+      - name: Persist state
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          # Best-effort: losing the served-memory costs dedupe, never
+          # the digest (which already went out).
+          if [ -n "$(git status --porcelain state/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/
+            git commit -m "Update agent state"
+            git pull --rebase -q origin main || true
+            git push || echo "state push failed (non-fatal)"
+          fi
 
       - name: Alert on failure
         if: failure()

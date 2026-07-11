@@ -1,69 +1,86 @@
 # papers-digest
 
-Weekly arXiv digest → Telegram, Saturdays ~9:07 AM IST via GitHub
-Actions. One agent, one task, one bot.
+Weekly arXiv digest → Telegram, Saturday 6:00 IST via GitHub Actions.
+The week's most relevant papers for a data & AI engineer — picked from
+~2,500 submissions across seven categories, grouped into four interest
+sections, each with two terse sentences and its arXiv link, plus a
+📌 SPOTLIGHT deep-dive on the week's #1. One agent, one task, one bot.
 
-The week's AI/data papers from four arXiv categories, filtered down to
-the 6-8 most relevant to a data engineer building LLM systems — what
-each shows, why it matters, and the link.
+```
+📄 Papers digest — week ending 11 Jul 2026
+(1,004 papers scanned across 7 categories, 61 read in full, 14 trending on HF)
+
+🤖 AI & LLM
+🔥 <title>
+<what it shows; why it matters.>
+https://arxiv.org/abs/…
+
+👁 VISION
+…
+
+🗄 DATA & SYSTEMS
+…
+
+🔧 HARDWARE
+…
+
+📌 SPOTLIGHT — <the #1 pick>
+<5-6 sentences: method, headline numbers, admitted limitations, why it
+matters in practice.>
+https://arxiv.org/abs/…
+```
 
 ## How the code works
 
 `papers_digest.py`, in pipeline order:
 
-- **`CATEGORIES`** — `cs.LG`, `cs.CL`, `cs.AI`, `cs.DB`. **`INTERESTS`**
-  — the relevance filter the model applies (LLM systems/agents, RAG and
-  vector search, efficiency, data engineering, evals). Edit either to
-  retune the digest.
-- **`fetch_recent(category, cutoff)`** — **paginated** calls per category
-  to the arXiv Atom API (`export.arxiv.org/api/query`), newest first, in
-  pages of 100 with `start=`. arXiv sorts newest-first and caps each
-  response, so a busy category (cs.LG sees ~750 submissions/week) needs
-  several pages to reach the far end of the window — the old single
-  40-result call only ever saw the newest day and silently dropped days
-  2-7. Paging stops when an entry predates the 7-day cutoff (everything
-  after is older too) or the feed runs dry, hard-bounded by `MAX_PAGES`
-  (12 → ≤1200 entries/category), with a 3s pause between pages per arXiv's
-  rate guidance. A full week across four categories is ~1500 papers —
-  too many abstracts for the model's context window — so each category's
-  pool is down-sampled to `MAX_PER_CATEGORY` (150) *evenly across the
-  week*, keeping a spread from every day and stopping the high-volume ML
-  categories from crowding out cs.DB. Each paper carries its arXiv primary
-  category tag. Abstracts truncated to 600 chars. (A two-stage
-  full-abstract re-rank is deferred as a separate, supervised change.)
-- **`main()`** — dedupes across categories by title (papers cross-list),
-  with per-category `try/except` feeding a "⚠️ Could not check" footer.
-  One model call picks and ranks the 6-8 most relevant, told to balance
-  across topics using the category tags: title, 2 terse sentences (what it
-  shows, why it matters to me), link. A genuinely thin week (< 3 papers
-  and no fetch failures) sends **nothing** — silence over filler, per the
-  fleet convention. If the week is thin *because* fetches failed, it
-  raises so the workflow's failure-alert step pings loudly.
-- **`agentlib.py`** (vendored) — `ask_llm()` one-shot model call;
-  `send_telegram()` chunked sends.
+- **`CATEGORIES`** — cs.LG, cs.CL, cs.AI (core ML/LLM), **cs.CV**
+  (vision), cs.DB, **cs.DC** (data & systems), **cs.AR** (hardware
+  architecture — accelerators, chips). `fetch_recent()` pages each
+  category newest-first until it crosses the 7-day cutoff (bounded by
+  `MAX_PAGES`), then down-samples evenly across the week to 150/category
+  so high-volume ML can't crowd out data/hardware.
+- **`interests()`** — from the `PAPERS_INTERESTS` secret (LLM systems,
+  computer vision, data engineering, ML infrastructure, hardware
+  accelerators, evaluation…); change anytime with `gh secret set`.
+- **`hf_upvotes()`** — Hugging Face's daily-papers API for the window:
+  `{arxiv id: upvotes}`, merged deterministically. Papers at ≥20
+  upvotes are 🔥-flagged for both models AND **force-included in the
+  shortlist** — a skim cannot drop what the community is talking about.
+  An unreachable API costs the signal, never the digest.
+- **`shortlist()`** — stage 1 (haiku): skims title+snippet in chunks of
+  150, keeps up to 12/chunk, recall over precision; an unparseable
+  chunk is kept whole.
+- **`rank()`** — stage 2 (sonnet): reads the survivors' full abstracts,
+  picks 10-12 grouped under 🤖 AI & LLM / 👁 VISION / 🗄 DATA & SYSTEMS /
+  🔧 HARDWARE (2-4 each, section skipped only when empty), and appends a
+  `===STATE===` tail naming the picked arxiv ids, best first.
+- **`validate_links()`** — every URL in the digest must be one we handed
+  the model; anything else becomes `(link unavailable)` — a mangled
+  arXiv id silently points at someone else's paper.
+- **`spotlight()`** — the #1 pick, read for real: arXiv's HTML full text
+  (up to 15k chars, abstract fallback) → 5-6 sentences on method,
+  numbers, limitations, practical relevance. Best-effort enrichment.
+- **Served memory** (`state/served.json`, committed back) — picked ids
+  kept 90 days and excluded from future pools, so a revised
+  resubmission is never served twice.
+- **`agentlib.py`** (vendored) — `ask_llm()`, `send_telegram()`.
 
 ## Design notes
 
-- Weekly on purpose: daily arXiv is noise; a few hundred candidates in
-  (down-sampled from the full ~1500-paper week), 6-8 picks out, once a
-  week, is readable.
-- Scheduled by the fleet-scheduler Worker at the exact minute; the
-  GitHub cron an hour later is a guarded backup. A doubly-dropped week
-  is still covered by next Saturday's 7-day lookback.
-
-- **Two-stage review**: a cheap model (`PAPERS_MODEL_FILTER`, default
-  haiku) skims every candidate in chunks — title + 200-char snippet —
-  and shortlists recall-biased (an unparseable reply keeps the whole
-  chunk); a stronger model (`PAPERS_MODEL_RANK`, default sonnet) ranks
-  the survivors on their full abstracts. One model can't judge ~600
-  abstracts in one call; two tiers can, for pennies.
-
+- Weekly on purpose — a daily arXiv feed is noise; Saturday morning is
+  reading time.
+- Two-stage because one model can't judge ~1,000 abstracts in one call;
+  two tiers can, for pennies. `PAPERS_MODEL_FILTER` /
+  `PAPERS_MODEL_RANK` override the tiers.
+- Silent only when the week is genuinely thin AND nothing failed; fetch
+  failures raise loudly instead.
 - Tests run in CI on every push (`.github/workflows/tests.yml`).
 
 ## Ops
 
-- Schedule: the fleet-scheduler Worker dispatches Sat 06:00 IST on the
-  minute; the GitHub cron (`30 1 * * 6` UTC = Sat 07:00 IST) is a
-  guarded backup
+- Schedule: fleet-scheduler dispatches Sat 06:00 IST; backup cron
+  `30 1 * * 6` UTC (Sat 07:00 IST) with the dedupe guard.
 - Run now: `gh workflow run papers-digest.yml -R astroboy1183/papers-digest`
-- Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`,
+  `TELEGRAM_CHAT_ID`, `PAPERS_INTERESTS` (optional; defaults in code).
