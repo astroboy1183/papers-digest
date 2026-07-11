@@ -3,9 +3,9 @@ name: Papers digest
 on:
   schedule:
     # Backup only: fleet-scheduler dispatches this workflow at the exact
-    # time (Sat 03:37 UTC = 09:07 IST); this cron fires an hour later and
+    # time (Sat 00:30 UTC = 06:00 IST); this cron fires an hour later and
     # the guard skips it when the dispatch already delivered.
-    - cron: '37 4 * * 6'
+    - cron: '30 1 * * 6'
   workflow_dispatch:
     inputs:
       source:

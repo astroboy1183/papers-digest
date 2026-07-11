@@ -62,8 +62,8 @@ each shows, why it matters, and the link.
 
 ## Ops
 
-- Schedule: the fleet-scheduler Worker dispatches Sat 09:07 IST on the
-  minute; the GitHub cron (`37 4 * * 6` UTC = Sat 10:07 IST) is a
+- Schedule: the fleet-scheduler Worker dispatches Sat 06:00 IST on the
+  minute; the GitHub cron (`30 1 * * 6` UTC = Sat 07:00 IST) is a
   guarded backup
 - Run now: `gh workflow run papers-digest.yml -R astroboy1183/papers-digest`
 - Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
